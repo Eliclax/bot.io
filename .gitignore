@@ -1,5 +1,15 @@
-auth.txt
-*.db
-*.pyc
+# python
 __pycache__/
+*.pyc
+venv/
 
+# config
+config/token.txt
+config/io_game.py
+
+# state
+*.sqlite
+
+# editor configs
+.vscode
+.idea

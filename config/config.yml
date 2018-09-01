@@ -1,0 +1,29 @@
+token_file:
+  config/token.txt
+
+prefix:
+  default:
+    '$'
+
+# Discord-based config
+ids:
+  hosts:
+    - 161508165672763392
+  developers:
+    - 161508165672763392
+    - 138589210604077056
+    - 224083572586184705
+  allowed_channels:
+    - 290757101914030080
+    - 290756934523551744
+  blocked_channels:
+    - 409777799000227841
+
+# D.py setup
+cogs:
+  - cogs.core
+  - cogs.misc
+  - cogs.io_game
+
+global_coms:
+  - hi

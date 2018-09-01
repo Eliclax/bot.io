@@ -1,2 +1,0 @@
-py core.py
-PAUSE
