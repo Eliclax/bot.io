@@ -96,6 +96,16 @@ class IO_Game:
         cursor.close()
         return rtn
 
+    def get_score(self, userid, round_name, status=None):
+        if status is None:
+            status = self.get_status(userid, round_name)
+        score = 0
+        for i in status:
+            if i[-2] < 0:
+                break
+            score += i[-2]
+        return score
+
     # DISCORD
     def format_prompt(self, query, response, n='-'):
         return f'```py\n IN[{n}]: {query}\nOUT[{n}]: {response}```'
@@ -111,7 +121,7 @@ class IO_Game:
             return await ctx.send('Unknown round name')
 
         status = self.get_status(ctx.author.id, round_name)
-        score = sum(i[-2] for i in status)
+        score = self.get_score(ctx.author.id, round_name, status)
 
         doc = rounds[round_name].__doc__.strip()
         func = rounds[round_name].__name__
@@ -301,11 +311,15 @@ class IO_Game:
                 if check[2] not in self.get_solved(check[5]):
                     self.record_solved(check[2], check[5])
                 mark = 'correct'
+                await chan.send(f'Your submission of {check[4]} was correct. '\
+                    f'Your score was **{self.get_score(check[2], check[5])}**.')
+                score = -1
             else:
                 mark = 'incorrect'
+                await chan.send(f'Your submission of {check[4]} was incorrect.')
+                score = -1
 
-            await chan.send(f'Your submission of {check[4]} was {mark}.')
-            self.log_status(check[2], check[5], None, None, None, 0, f'Answer {check[4]} {mark}.')
+            self.log_status(check[2], check[5], None, None, None, score, f'Answer {check[4]} {mark}.')
             await msg.edit(content=f'**Marked as {mark}.**\n~~' + msg.content + '~~')
 
 
