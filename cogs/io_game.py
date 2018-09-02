@@ -101,9 +101,10 @@ class IO_Game:
             status = self.get_status(userid, round_name)
         score = 0
         for i in status:
-            if i[-2] < 0:
+            if i[-2] == -2:
                 break
-            score += i[-2]
+            if i[-2] > 0:
+                score += i[-2]
         return score
 
     # DISCORD
@@ -199,10 +200,11 @@ class IO_Game:
             op = out[0] if len(out) == 1 and isinstance(out, tuple) else out
             delta_score = 1
 
-        self.log_status(ctx.author.id, round, params, out, guess, delta_score)
         status = self.get_status(ctx.author.id, round)
+        n = len([i for i in status if not i[-1]])
+        self.log_status(ctx.author.id, round, params, out, guess, delta_score)
 
-        await ctx.send(self.format_prompt(query, op, len(status)))
+        await ctx.send(self.format_prompt(query, op, n))
 
     @commands.command()
     async def submit(self, ctx, round_name: str, *, answer):
@@ -317,7 +319,7 @@ class IO_Game:
             else:
                 mark = 'incorrect'
                 await chan.send(f'Your submission of {check[4]} was incorrect.')
-                score = -1
+                score = 0
 
             self.log_status(check[2], check[5], None, None, None, score, f'Answer {check[4]} {mark}.')
             await msg.edit(content=f'**Marked as {mark}.**\n~~' + msg.content + '~~')
