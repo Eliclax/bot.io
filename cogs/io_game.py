@@ -16,7 +16,7 @@ first = lambda self, func, default=None: firstOrDefault((*filter(func, self),), 
 
 
 class IO_Game:
-    SUBMISSION_CHANNEL = 290757101914030080
+    SUBMISSION_CHANNEL = 471641874025676801
 
     def __init__(self, bot):
         self.bot = bot
@@ -37,21 +37,28 @@ class IO_Game:
     # DATABASE
     def setup_db(self):
         cursor = self.bot.database.cursor()
+        if 1+1==1:
+            cursor.execute("DROP TABLE IF EXISTS status")
+            cursor.execute("DROP TABLE IF EXISTS solved")
+            cursor.execute("DROP TABLE IF EXISTS queue")
         cursor.execute("""CREATE TABLE IF NOT EXISTS status
                           (userid str, round str, inputs str, outputs str,
-                           guesses str, delta_score int, message str)""")
+                           guesses str, delta_score int, message str,
+                           statusID INTEGER PRIMARY KEY AUTOINCREMENT)""")
         cursor.execute("""CREATE TABLE IF NOT EXISTS solved
-                          (userid str, round str)""")
+                          (userid str, round str,
+                          solvedID INTEGER PRIMARY KEY AUTOINCREMENT)""")
         cursor.execute("""CREATE TABLE IF NOT EXISTS queue
                           (m_c_id str, msg_id str, author_id str,
-                           channel_id str, ans str, round str)""")
+                           channel_id str, ans str, round str,
+                           queueID INTEGER PRIMARY KEY AUTOINCREMENT)""")
         cursor.close()
         self.bot.database.commit()
 
     def log_status(self, userid, round, inputs, outputs, guesses, delta_score, message=''):
         cursor = self.bot.database.cursor()
-        cursor.execute("""INSERT into status VALUES
-            ($1, $2, $3, $4, $5, $6, $7);""", (userid, round, repr(inputs),
+        cursor.execute("""INSERT into status (userid, round, inputs, outputs, guesses, delta_score, message)
+        	VALUES ($1, $2, $3, $4, $5, $6, $7);""", (userid, round, repr(inputs),
             repr(outputs), repr(guesses), delta_score, message))
         cursor.close()
         self.bot.database.commit()
@@ -61,7 +68,7 @@ class IO_Game:
         cursor.execute("""SELECT * FROM status WHERE userid=$1 AND round=$2""",
             (userid, round))
         rtn = [
-            (eval(i[2]), eval(i[3]), eval(i[4]), i[5], i[6])
+            (eval(i[2]), eval(i[3]), eval(i[4]), i[5], i[6], i[7])
             for i in cursor.fetchall()
         ]
         cursor.close()
@@ -70,7 +77,7 @@ class IO_Game:
 
     def record_solved(self, userid, round):
         cursor = self.bot.database.cursor()
-        cursor.execute("""INSERT into solved VALUES
+        cursor.execute("""INSERT into solved (userid, round) VALUES
             ($1, $2);""", (userid, round))
         cursor.close()
         self.bot.database.commit()
@@ -84,7 +91,7 @@ class IO_Game:
 
     def sub_queue_push(self, ctx, answer, msg, round):
         cursor = self.bot.database.cursor()
-        cursor.execute("""INSERT into queue VALUES
+        cursor.execute("""INSERT into queue (m_c_id, msg_id, author_id, channel_id, ans, round) VALUES
             ($1, $2, $3, $4, $5, $6);""", (msg.channel.id, msg.id, ctx.author.id, ctx.channel.id, answer, round))
         cursor.close()
         self.bot.database.commit()
@@ -101,10 +108,10 @@ class IO_Game:
             status = self.get_status(userid, round_name)
         score = 0
         for i in status:
-            if i[-2] == -2:
+            if i[-3] == -2:
                 break
-            if i[-2] > 0:
-                score += i[-2]
+            if i[-3] > 0:
+                score += i[-3]
         return score
 
     # DISCORD
@@ -200,10 +207,19 @@ class IO_Game:
             op = out[0] if len(out) == 1 and isinstance(out, tuple) else out
             delta_score = 1
 
-        status = self.get_status(ctx.author.id, round)
-        n = len([i for i in status if not i[-1]])
         self.log_status(ctx.author.id, round, params, out, guess, delta_score)
 
+        status = self.get_status(ctx.author.id, round)
+        score = self.get_score(ctx.author.id, round, status)
+
+        n = len([i for i in status if not i[-2]])
+
+        logmsg = f'{status[-1][5]} | {ctx.message.id} | {ctx.author.id} as {ctx.author.name}'
+        logmsg += f' | [{n}]: {round}{params} = {out} | +{delta_score} => {score}'
+        logmsg += '' if guess is None else f' | guess = {guess}'
+
+        self.bot.logger.info(logmsg)
+        
         await ctx.send(self.format_prompt(query, op, n))
 
     @commands.command()
