@@ -41,17 +41,21 @@ class IO_Game:
             cursor.execute("DROP TABLE IF EXISTS status")
             cursor.execute("DROP TABLE IF EXISTS solved")
             cursor.execute("DROP TABLE IF EXISTS queue")
+            cursor.execute("DROP TABLE IF EXISTS mark")
         cursor.execute("""CREATE TABLE IF NOT EXISTS status
                           (userid str, round str, inputs str, outputs str,
                            guesses str, delta_score int, message str,
-                           statusID INTEGER PRIMARY KEY AUTOINCREMENT)""")
+                           statusKEY INTEGER PRIMARY KEY AUTOINCREMENT)""")
         cursor.execute("""CREATE TABLE IF NOT EXISTS solved
                           (userid str, round str,
-                          solvedID INTEGER PRIMARY KEY AUTOINCREMENT)""")
+                          solvedKEY INTEGER PRIMARY KEY AUTOINCREMENT)""")
         cursor.execute("""CREATE TABLE IF NOT EXISTS queue
                           (m_c_id str, msg_id str, author_id str,
                            channel_id str, ans str, round str,
-                           queueID INTEGER PRIMARY KEY AUTOINCREMENT)""")
+                           queueKEY INTEGER PRIMARY KEY AUTOINCREMENT)""")
+        cursor.execute("""CREATE TABLE IF NOT EXISTS mark
+                          (userid str, msg_id str, statuskey str, verdict str,
+                          markKEY INTEGER PRIMARY KEY AUTOINCREMENT)""")
         cursor.close()
         self.bot.database.commit()
 
@@ -74,6 +78,24 @@ class IO_Game:
         cursor.close()
 
         return rtn
+
+    def get_status_from_key(self, key):
+        cursor = self.bot.database.cursor()
+        rtn = cursor.execute("""SELECT * FROM status WHERE statusKEY=$1""", (key)).fetchone()
+        return rtn
+        cursor.close()
+
+    def log_mark(self, userid, msg_id, statuskey, verdict=''):
+    	cursor = self.bot.database.cursor()
+    	cursor.execute("""INSERT INTO mark (userid, msg_id, statuskey, verdict)
+    		VALUES ($1, $2, $3, $4);""", userid, msg_id, status)
+    	cursor.close()
+    	self.bot.database.commit()
+
+    #def log_verdict(self, key, message=''):
+    #    cursor = self.bot.database.cursor()
+    #    cursor.execute("""UPDATE status SET message=$1 WHERE statusKEY=$2""", (message, key))
+    #    cursor.close()
 
     def record_solved(self, userid, round):
         cursor = self.bot.database.cursor()
@@ -108,10 +130,10 @@ class IO_Game:
             status = self.get_status(userid, round_name)
         score = 0
         for i in status:
-            if i[-3] == -2:
+            if i[3] == -2:
                 break
-            if i[-3] > 0:
-                score += i[-3]
+            if i[3] > 0:
+                score += i[3]
         return score
 
     # DISCORD
@@ -119,8 +141,8 @@ class IO_Game:
         return f'```py\n IN[{n}]: {query}\nOUT[{n}]: {response}```'
 
     @commands.command()
-    async def history(self, ctx, round_name: str):
-        """View your history for a given round."""
+    async def history(self, ctx, round_name: str, range1: int, range2: int):
+        """View your history for a given round between two given query numbers."""
         if ctx.guild is not None:
             await ctx.message.delete()
             return await ctx.send('This command only works in DMs. Try DMing me that again.')
@@ -145,21 +167,30 @@ class IO_Game:
         msg += '=' * max(len(name), len(sig))
         msg += '\n\n'
 
-        n = 0;
-        for i in status:
-            if i[-1]:
-                msg += f':: {i[-1]}\n'
+        low = min(range1, range2)
+        high = max(range1, range2)
+
+        low = 0 if low < 0 else low
+        high = len(status) if high+1 > len(status) else high+1 
+
+        n = len([i for i in range(0, low) if not status[i][4]])
+        excess = len([i for i in range(low, high) if status[i][4]])
+        _high = len(status) if high+excess+1 > len(status) else high+excess+1
+
+        for i in range(low, _high):
+            if status[i][4]:
+                msg += f':: {status[i][4]}\n'
             else:
-                msg += f' IN[{n}]: {func}({", ".join(map(str, i[0]))})'
-                if i[2] is not None:
-                    msg += f' = ({", ".join(map(str, i[2]))})'
+                msg += f' IN[{n}]: {func}({", ".join(map(str, status[i][0]))})'
+                if status[i][2] is not None:
+                    msg += f' = ({", ".join(map(str, status[i][2]))})'
                 msg += '\n'
-                msg += f'OUT[{n}]: {", ".join(map(str, i[1]))}\n'
+                msg += f'OUT[{n}]: {", ".join(map(str, status[i][1]))}\n'
                 n += 1
 
         await ctx.send(f'```py\n{msg}```')
 
-    @commands.command()
+    @commands.command(aliases=['q'])
     async def query(self, ctx, *, query: str):
         """Test a query. View full help for details.
 
@@ -212,7 +243,7 @@ class IO_Game:
         status = self.get_status(ctx.author.id, round)
         score = self.get_score(ctx.author.id, round, status)
 
-        n = len([i for i in status if not i[-2]])
+        n = len([i for i in status if not i[4]])
 
         logmsg = f'{status[-1][5]} | {ctx.message.id} | {ctx.author.id} as {ctx.author.name}'
         logmsg += f' | [{n}]: {round}{params} = {out} | +{delta_score} => {score}'
@@ -220,7 +251,7 @@ class IO_Game:
 
         self.bot.logger.info(logmsg)
         
-        await ctx.send(self.format_prompt(query, op, n))
+        await ctx.send(self.format_prompt(query, op, n-1))
 
     @commands.command()
     async def submit(self, ctx, round_name: str, *, answer):
@@ -239,13 +270,18 @@ class IO_Game:
 
         chan = self.bot.get_channel(self.SUBMISSION_CHANNEL)
 
-        q = await chan.send(f'Sumbmissions from {ctx.author.mention}:\n**{answer}**\nCorrect solution:\n**{ans}**')
+        q = await chan.send(f'Sumbmissions from {ctx.author.mention}: **{answer}**\nCorrect solution: **{ans}**')
         self.sub_queue_push(ctx, answer, q, round_name)
         await q.add_reaction('✅')
         await q.add_reaction('❌')
 
-        self.log_status(ctx.author.id, round_name, None, None, None, 0, f'Submitted {answer}')
+        self.log_status(ctx.author.id, round_name, None, None, None, 1, f'Submitted {answer}')
         await ctx.send('Answer recorded. Please wait for a host to review it.')
+
+    #@commands.command(aliases=['m'])
+    #@is_developer()
+    #async def mark(self, ctx, submission_key, verdict: str):
+    #    x = 2
 
     @commands.command()
     async def rounds(self, ctx):
@@ -255,7 +291,7 @@ class IO_Game:
             rounds_str += f'\n - `{i}`'
         return await ctx.send(f'**Currently active rounds:**' + rounds_str)
 
-    @commands.command(alias=['show', 'details'])
+    @commands.command(aliases=['show', 'details'])
     async def info(self, ctx, round_name: str):
         """Get details for a given round."""
         if round_name not in rounds:
@@ -274,7 +310,7 @@ class IO_Game:
         details = f'_{details}_\n' if details else ''
         return await ctx.send(f'**{title}**\n{details}\n{sig}\n{diff}')
 
-    @commands.command(alias=['log'])
+    @commands.command(aliases=['log'])
     @is_developer()
     async def proxy(self, ctx, userid: int, *, command: str):
         """Run a command as a specified user."""

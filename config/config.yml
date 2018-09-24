@@ -4,6 +4,8 @@ token_file:
 prefix:
   default:
     '$'
+  471555455458476032:
+    '.'
 
 # Discord-based config
 ids:
